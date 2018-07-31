@@ -1,9 +1,11 @@
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
 from django.http import HttpResponse, Http404
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from rbms.models import Room, Booking
+import datetime
 
 # Simple general website form with added menu
 start_template = """
@@ -63,6 +65,25 @@ room_list_table = """
     </tbody>
 </table>
 """
+
+today = datetime.date.today()
+
+
+def check_room_bookings(room_object):
+    room_bookings = Booking.objects.filter(
+        room=room_object, date__gte=today
+    ).order_by("date")
+
+    html = ""
+    if room_bookings:
+        html += "<ul>"
+        # Add reserved dates
+        for booking in room_bookings:
+            html += f"<li>{booking.date}</li>"
+        html += "</ul>"
+    else:
+        html += "Brak rezerwacji."
+    return html
 
 
 @csrf_exempt
@@ -150,16 +171,8 @@ def show_room(request, id):
         <p>Projektor: {projector_available}</p>
         <p><a href="/room/reservation/{room.id}">Zarezerwuj</a></p>
         <p>Zajęta w dniach:</p>
-        <ul>
+        {check_room_bookings(room)}
         """
-
-        # Add reserved dates
-        room_display_html += ""
-
-        # Or no reservations
-
-        # Finish list
-        room_display_html += "</ul>"
 
         return HttpResponse(start_template.format(room_display_html))
     except ObjectDoesNotExist:
@@ -171,12 +184,25 @@ def view_all(request):
 
     table_rows = ""
     for room in room_data:
+
+        check_booking = Booking.objects.filter(
+            date=today, room=room
+        )
+        if check_booking:
+            reservation_status = """
+            <td style="text-align: center; background-color: #E6B0AA;">Zajęte
+            </td>"""
+        else:
+            reservation_status = """
+            <td style="text-align: center; background-color: #ABEBC6;">Wolne
+            </td>"""
+
         table_rows += f"""
         <tr style="border: 1px solid black">
             <td>
                 <a href="/room/{room.id}">{room.name}</a>
             </td>
-            <td style="text-align: center;"></td>
+            {reservation_status}
             <td style="text-align: center;">
                 <a href="/room/reservation/{room.id}">Rezerwuj</a>
             </td>
@@ -194,35 +220,153 @@ def view_all(request):
     )
 
 
+@csrf_exempt
 def reserve_room(request, id):
     try:
-        room = Room.objects.get(id=id)
+        room_data = Room.objects.get(id=id)
     except:
         return HttpResponse("Nie ma sali o tym numerze.")
 
+    projector_available = "Tak" if room_data.has_projector is True else "Nie"
 
-    # może najpier zrobić rezerwowanie, z testami. A późneij testować blokadę.
+    reservation_response = f"""
+        <h2>Rezerwacja sali: {room_data.name}</h2>
+        <p>Liczba miejsc: {room_data.seats}</p>
+        <p>Projektor: {projector_available}</p>
+        <form action="#" method="POST">
+            <label>Zarezerwuj salę na dzień:<br>
+            <input type="date" name="reservation_date" min="{today}">
+            </label><br><br>
+            <label>Komentarz (opcjonalny):<br>
+            <input type="text" name="comment" style="height: 4em; width: 600px">
+            </label> <br><br>
+            <button name="submit">Rezerwuj</button>
+        </form><br>
+        <p>Zajęta w dniach:</p> 
+        {check_room_bookings(room_data)}
+        """
 
-    # Czy rezerwacja jest już zrobiona/zajęcia
+    if request.method == "GET":
+        return HttpResponse(start_template.format(reservation_response))
+    elif request.method == "POST":
+        if request.POST.get("reservation_date") is None\
+                or request.POST.get("reservation_date") == "":
+                return HttpResponse("Nie wprowadzono poprawnych danych.")
 
-    # Czy data jest z przeszłości
+        # Modify date format, then check
+        year, month, day = map(
+            int, request.POST.get("reservation_date").split("-")
+        )
+        if datetime.date(year, month, day) < today:
+            return HttpResponse("Wprowadzono błędną datę.")
 
-    # Jeśli błąd, to info o błędzie
+        # Check existing bookings
+        check_bookings = Booking.objects.filter(
+            date=datetime.date(year, month, day), room=room_data
+        )
+        if check_bookings:
+            return HttpResponse(
+                "To pomieszczenie jest już zarezerwowane w tym dniu."
+            )
 
-    return redirect(reverse("view_all"))
+        # Create a room booking
+        Booking.objects.create(
+            date=request.POST.get("reservation_date"),
+            comment=request.POST.get("comment"),
+            room=room_data
+        )
+
+        return redirect(reverse("view_all"))
 
 
-
+@csrf_exempt
 def room_search(request):
-    # Zrobić jak movies
 
-    # Wyszukiwanie po: nazwa, minimalna pojemność, dzień, obecność rzutnika
-    # metodą get
-    # rezultat to lista wolnych sal. Jeśli nie ma, to napisz że brak wolnych w tym terminie i o podanych kryteriach
+    @csrf_exempt
+    def movie_search_form():
+        search_html = f"""
+            <h2>Wyszukiwarka wolnych sal</h2>
+            <p>Poniżej wprowadź paramety wyszukiwania.</p>
+            <br><br>
+            <form method="GET" action="#">
+                <label>Nazwa sali:
+                    <input type="text" name="room_name">
+                </label><br><br>
+                <label>Minimalna liczba miejsc:
+                    <input type="number" name="room_seats" min=1>
+                </label><br><br>
+                <label>Data:
+                    <input type="date" name="search_date"
+                     min={today} value={today}>
+                </label><br><br>
+                <label>Z projektorem?
+                    <select name="has_projector">
+                        <option value=True>Tak</option>
+                        <option selected value=False>Nie</option>
+                    </select>
+                </label><br><br>
+                <button type="submit" name="search" value=1>Szukaj</button>
+            </form>
+            """
+        return search_html
 
-    return HttpResponse("Nothing yet.")
+    def search_results(s_room_name=None, s_room_seats=None,
+                       s_search_date=today, s_has_projector=None):
 
-# ToDo: Na stronie głównej status danego dnia. Dzisiaj? Zajęte lub wolne.
-# ToDo: Na stronie sali lista dni kiedy sala jest zajęta, bez dni które minęły.
-# ToDo: Na stronie rezerwacji sali lista dni zajętych, bez minionych.
+        # Retrieve room data
+        search_result_data = Room.objects.all()
 
+        # Application of search filters one by one. Each step limits results.
+        # 1. Name search
+        if s_room_name:
+            search_result_data = search_result_data.filter(
+                name__icontains=s_room_name)
+
+        # 3. Seat search
+        if s_room_seats:
+            search_result_data = search_result_data.filter(
+                seats__gte=s_room_seats
+            )
+
+        # 4. Projector search
+        if s_has_projector == "True":
+            search_result_data = search_result_data.filter(
+                has_projector=True
+            )
+
+        # 5. Date search. Allows history search.
+        room_bookings = Booking.objects.filter(date=s_search_date)
+        for booking in room_bookings:
+            search_result_data = search_result_data.exclude(
+                id=booking.room.id
+            )
+
+        # Build result list
+        search_result_output = ""
+        if not search_result_data:
+            search_result_output = """
+            Brak wolnych sal dla podanych kryteriów wyszukiwania.
+            """
+        else:
+            search_result_output += "<p>Wolne sale w tym dniu:</p>"
+            for element in search_result_data:
+                search_result_output += f"""
+                <li><a href="/room/reservation/{element.id}">
+                {element.name}</a></li>
+                """
+
+        return search_result_output
+
+    if request.method == "GET" and not request.GET.get("search"):
+        return HttpResponse(
+            start_template.format(movie_search_form())
+        )
+    elif request.method == "GET" and int(request.GET.get("search")) == 1:
+        return HttpResponse(
+            start_template.format(movie_search_form() + search_results(
+                s_room_name=request.GET.get("room_name"),
+                s_room_seats=request.GET.get("room_seats"),
+                s_search_date=request.GET.get("search_date"),
+                s_has_projector=request.GET.get("has_projector")
+            ))
+        )
