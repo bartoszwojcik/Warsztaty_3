@@ -283,7 +283,7 @@ def reserve_room(request, id):
 def room_search(request):
 
     @csrf_exempt
-    def movie_search_form():
+    def room_search_form():
         search_html = f"""
             <h2>Wyszukiwarka wolnych sal</h2>
             <p>Poniżej wprowadź paramety wyszukiwania.</p>
@@ -359,11 +359,11 @@ def room_search(request):
 
     if request.method == "GET" and not request.GET.get("search"):
         return HttpResponse(
-            start_template.format(movie_search_form())
+            start_template.format(room_search_form())
         )
     elif request.method == "GET" and int(request.GET.get("search")) == 1:
         return HttpResponse(
-            start_template.format(movie_search_form() + search_results(
+            start_template.format(room_search_form() + search_results(
                 s_room_name=request.GET.get("room_name"),
                 s_room_seats=request.GET.get("room_seats"),
                 s_search_date=request.GET.get("search_date"),
