@@ -10,15 +10,19 @@
 # Sample screenshots
 
 Room List (Index)
+
 ![Room List](screenshots/room-list.png)
 
 New Room
+
 ![New Room](screenshots/new-room.png)
 
 Room Reservation
+
 ![Room Reservation](screenshots/room-reservation.png)
 
 Search and Results
+
 ![Search and Results](screenshots/room-search-and-results.png)
 
 # Author
